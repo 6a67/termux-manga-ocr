@@ -80,12 +80,6 @@ curl "http://git.savannah.gnu.org/gitweb/?p=config.git;a=blob_plain;f=config.sub
 find . -type f -exec sed -i 's/register //g' {} +
 find . -type f -exec sed -i 's/binary_function/__binary_function/g' {} +
 
-# Throw everything at it and see what sticks
-PATH="$PATH:$PREFIX/bin"
-CPATH="$CPATH:$PREFIX/include"
-C_INCLUDE_PATH="$C_INCLUDE_PATH:$PREFIX/include"
-LIBRARY_PATH="$LIBRARY_PATH:$PREFIX/lib"
-LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$PREFIX/lib"
 
 # Configure
 
