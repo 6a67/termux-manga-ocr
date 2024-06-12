@@ -1,0 +1,144 @@
+#! /usr/bin/python
+
+"""
+This scripts monitors the screenshot folder. If a new image appears,
+it will be processed by the OCR, the result will be saved to the
+clipboard and the image will be moved to the `scanned` folder
+inside the screenshot folder.
+"""
+
+import os
+import sys
+import time
+from pathlib import Path
+from manga_ocr import MangaOcr
+
+STORAGE_PATH = Path("~/storage/").expanduser()
+SCREENSHOT_PATHS = [
+    STORAGE_PATH.joinpath("DCIM/Screenshots"),
+    STORAGE_PATH.joinpath("dcim/Screenshots"),
+    STORAGE_PATH.joinpath("Pictures/Screenshots"),
+    STORAGE_PATH.joinpath("pictures/Screenshots"),
+]
+DELAY_SECS = 1
+
+mocr = MangaOcr()
+
+
+def check_storage():
+    """
+    Check if `termux-setup-storage` has been run.
+    """
+    if not os.path.exists(STORAGE_PATH):
+        print("\033[91mPlease run `termux-setup-storage` first.\033[0m")
+        sys.exit(1)
+
+
+def check_termux_api():
+    """
+    Check if `termux-clipboard-get` can be run without timeout.
+    """
+    if os.system("timeout 5 termux-clipboard-get > /dev/null") != 0:
+        print(
+            "\033[91mPlease install the `termux-api` package and the corresponding app.\033[0m"
+        )
+        print(
+            "\033[91mRun `pkg install termux-api` and install https://f-droid.org/packages/com.termux.api/ on your device.\033[0m"
+        )
+        sys.exit(1)
+
+
+def send_notification(title, content):
+    """
+    Send a notification using termux-notification and then clear it.
+    """
+    notification_id = "manga_ocr_notification"
+    os.system(
+        f'termux-notification --id "{notification_id}" --title "{title}" --content "{content}"'
+    )
+    time.sleep(2)
+    os.system(f'termux-notification-remove "{notification_id}"')
+
+
+def move_image(image_path):
+    """
+    Move the image to the `scanned` folder.
+    """
+    if not image_path.parent.joinpath("scanned").exists():
+        image_path.parent.joinpath("scanned").mkdir()
+    new_path = image_path.parent.joinpath("scanned", image_path.name)
+    image_path.rename(new_path)
+
+
+def process_image(image_path):
+    """
+    Process the image with the OCR, save the result to the clipboard
+    and move the image to the `scanned` folder.
+    """
+    text = mocr(image_path)
+    if text:
+        print(f"Text: {text}")
+        os.system(f"termux-clipboard-set '{text}'")
+        send_notification("manga-ocr", f"Copied: {text}")
+
+    try:
+        move_image(image_path)
+    except Exception as e:
+        print(f"Error moving image: {e}")
+
+
+def check_dependencies():
+    """
+    Check if all dependencies are installed.
+    """
+    check_storage()
+    check_termux_api()
+
+
+def get_path_key(path):
+    return path, path.lstat().st_mtime
+
+
+def main():
+    """
+    Main function.
+    """
+
+    check_dependencies()
+
+    # See https://github.com/kha-white/manga-ocr/blob/master/manga_ocr/run.py
+    old_paths = set()
+    for path in SCREENSHOT_PATHS:
+        if not path.exists():
+            continue
+        for subpath in path.iterdir():
+            old_paths.add(get_path_key(subpath))
+
+    print("Monitoring screenshots...")
+    while True:
+        try:
+            for path in SCREENSHOT_PATHS:
+                if not path.exists():
+                    continue
+                for subpath in path.iterdir():
+                    path_key = get_path_key(subpath)
+                    if path_key not in old_paths and not subpath.name.startswith("."):
+                        old_paths.add(path_key)
+                        if subpath.suffix in [
+                            ".png",
+                            ".jpg",
+                            ".jpeg",
+                            ".webp",
+                            ".bmp",
+                            ".gif",
+                        ]:
+                            process_image(subpath)
+
+            time.sleep(DELAY_SECS)
+        except KeyboardInterrupt:
+            print("\nExiting...")
+            break
+
+
+if __name__ == "__main__":
+    sys.exit(main())
