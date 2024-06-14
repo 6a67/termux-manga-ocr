@@ -1,17 +1,23 @@
-#! /usr/bin/python
+#!/usr/bin/env python3
 
 """
-This scripts monitors the screenshot folder. If a new image appears,
+This scripts monitors the screenshot directory. If a new image appears,
 it will be processed by the OCR, the result will be saved to the
-clipboard and the image will be moved to the `scanned` folder
-inside the screenshot folder.
+clipboard and the image will be moved to the `scanned` directory
+inside the screenshot directory.
+
+See https://github.com/kha-white/manga-ocr/blob/master/manga_ocr/run.py
 """
 
 import os
 import sys
+import signal
 import time
 from pathlib import Path
-from manga_ocr import MangaOcr
+import argparse
+from PIL import Image
+import io
+import subprocess
 
 STORAGE_PATH = Path("~/storage/").expanduser()
 SCREENSHOT_PATHS = [
@@ -20,12 +26,24 @@ SCREENSHOT_PATHS = [
     STORAGE_PATH.joinpath("Pictures/Screenshots"),
     STORAGE_PATH.joinpath("pictures/Screenshots"),
 ]
-DELAY_SECS = 1
+IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"]
 
-mocr = MangaOcr()
+NOTIFICATION_ID = "manga_ocr_notification"
+NOTIFICATION_TITLE = "manga-ocr"
+
+CLIPBOARD_VALUE = "clipboard"
+SCREENSHOTS_VALUE = "screenshots"
+
+HIDE_MANGA_OCR_INITIALIZATION = True
+
+mocr = None
+
+args: argparse.Namespace = None
+
+ON_TERMUX: bool = os.environ.get("TERMUX_VERSION", "") != ""
 
 
-def check_storage():
+def check_storage() -> None:
     """
     Check if `termux-setup-storage` has been run.
     """
@@ -34,110 +52,359 @@ def check_storage():
         sys.exit(1)
 
 
-def check_termux_api():
+def check_clipboard() -> None:
     """
-    Check if `termux-clipboard-get` can be run without timeout.
+    Check if `termux-clipboard-get` can be run without timeout or xclip is installed.
     """
-    if os.system("timeout 5 termux-clipboard-get > /dev/null") != 0:
-        print(
-            "\033[91mPlease install the `termux-api` package and the corresponding app.\033[0m"
-        )
-        print(
-            "\033[91mRun `pkg install termux-api` and install https://f-droid.org/packages/com.termux.api/ on your device.\033[0m"
-        )
-        sys.exit(1)
+    if ON_TERMUX:
+        if os.system("timeout 5 termux-clipboard-get > /dev/null") != 0:
+            print(
+                "\033[91mPlease install the `termux-api` package and the corresponding app.\033[0m"
+            )
+            print(
+                "\033[91mRun `pkg install termux-api` and install https://f-droid.org/packages/com.termux.api/ on your device.\033[0m"
+            )
+            sys.exit(1)
+        return
+
+    if os.system("timeout 5 xclip -selection clipboard -o > /dev/null") == 0:
+        return
+
+    print("\033[91mPlease install the `xclip` package.\033[0m")
+    sys.exit(1)
 
 
-def send_notification(title, content):
+def signal_handler(sig, frame):
+    print("\nExiting...")
+    sys.exit(0)
+
+
+def send_notification(content: str) -> None:
     """
     Send a notification using termux-notification and then clear it.
     """
-    notification_id = "manga_ocr_notification"
-    os.system(
-        f'termux-notification --id "{notification_id}" --title "{title}" --content "{content}"'
-    )
-    time.sleep(2)
-    os.system(f'termux-notification-remove "{notification_id}"')
+    if ON_TERMUX:
+        os.system(
+            f'termux-notification --id "{NOTIFICATION_ID}" --title "{NOTIFICATION_TITLE}" --content "{content}"'
+        )
+        time.sleep(2)
+        os.system(f'termux-notification-remove "{NOTIFICATION_ID}"')
+        return
+
+    try:
+        os.system(f'notify-send "{NOTIFICATION_TITLE}" "{content}"')
+    except:
+        pass
 
 
-def move_image(image_path):
+def move_image(image_path: Path) -> None:
     """
-    Move the image to the `scanned` folder.
+    Move the image to the subdirectory.
     """
-    if not image_path.parent.joinpath("scanned").exists():
-        image_path.parent.joinpath("scanned").mkdir()
-    new_path = image_path.parent.joinpath("scanned", image_path.name)
+    subdir = Path(image_path.parent.joinpath(args.subdirectory))
+    subdir.mkdir(exist_ok=True)
+    new_path = subdir.joinpath(image_path.name)
     image_path.rename(new_path)
 
 
-def process_image(image_path):
+def output_text(text: str, image: Path | Image.Image) -> None:
+    """
+    Output the text to the clipboard or a file.
+    """
+    if args.write_to == CLIPBOARD_VALUE:
+        if ON_TERMUX:
+            os.system(f'echo "{text}" | termux-clipboard-set')
+        else:
+            os.system(f'echo "{text}" | xclip -selection clipboard')
+        
+        return
+
+    if isinstance(image, Image.Image):
+        image_name = "clipboard_image"
+    else:
+        image_name = image.name
+
+    write_to = Path(args.write_to).expanduser()
+    if write_to.is_dir():
+        write_to = write_to.joinpath(f"{image_name}.txt")
+    try:
+        with open(write_to, "a") as f:
+            f.write(text + "\n")
+    except Exception as e:
+        print(f"Error writing to file: {e}")
+
+
+def process_image(image: Path | Image.Image) -> None:
     """
     Process the image with the OCR, save the result to the clipboard
-    and move the image to the `scanned` folder.
+    and move the image to the subdirectory.
     """
-    text = mocr(image_path)
+    text = mocr(image).strip()
     if text:
         print(f"Text: {text}")
-        os.system(f"termux-clipboard-set '{text}'")
-        send_notification("manga-ocr", f"Copied: {text}")
+        output_text(text, image)
 
-    try:
-        move_image(image_path)
-    except Exception as e:
-        print(f"Error moving image: {e}")
+        if args.notification:
+            send_notification(f"Copied: {text}")
+
+    if args.move and isinstance(image, Path):
+        try:
+            move_image(image)
+        except Exception as e:
+            print(f"Error moving image: {e}")
 
 
-def check_dependencies():
+def check_dependencies(read_from: str, write_to: str) -> None:
     """
     Check if all dependencies are installed.
     """
-    check_storage()
-    check_termux_api()
+    if (
+        read_from == SCREENSHOTS_VALUE
+        or Path(read_from).is_relative_to(STORAGE_PATH)
+        or Path(write_to).is_relative_to(STORAGE_PATH)
+    ):
+        if not ON_TERMUX:
+            print("\033[91mThis option is intended to be run on termux.\033[0m")
+            sys.exit(1)
+
+        check_storage()
+
+    if read_from == CLIPBOARD_VALUE or write_to == CLIPBOARD_VALUE:
+        check_clipboard()
+
+    if read_from != CLIPBOARD_VALUE and not Path(read_from).exists():
+        print(f"\033[91m{read_from} does not exist.\033[0m")
+        sys.exit(1)
+
+    if write_to != CLIPBOARD_VALUE and not Path(write_to).expanduser().exists():
+        Path(write_to).expanduser().mkdir(parents=True, exist_ok=True)
+        print(
+            f"\033[33m{write_to} did not exist. Created directory.\033[0m"
+        )
 
 
-def get_path_key(path):
+def get_path_key(path: Path) -> str:
+    """
+    Get a unique key for a path.
+    """
     return path, path.lstat().st_mtime
+
+
+def get_clipboard_binary() -> io.BytesIO:
+    """
+    Get the clipboard data as binary.
+    Works for xclip and termux-clipboard-get.
+    """
+    if ON_TERMUX:
+        return io.BytesIO(
+            subprocess.run(
+                ["termux-clipboard-get"], stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            ).stdout
+        )
+    else:
+        for type in IMAGE_EXTENSIONS:
+            try:
+                spr = subprocess.run(
+                    [
+                        "xclip",
+                        "-selection",
+                        "clipboard",
+                        "-t",
+                        f"image/{type[1:]}",
+                        "-o",
+                    ],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
+
+                # check if successful
+                if spr.returncode != 0:
+                    continue
+
+                bin = io.BytesIO(spr.stdout)
+                if len(bin.getvalue()) > 10:
+                    return bin
+
+            except:
+                pass
+        
+        try:
+            return io.BytesIO(
+                subprocess.run(
+                    ["xclip", "-selection", "clipboard", "-o"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                ).stdout
+            )
+        except:
+            pass
+
+    return io.BytesIO()
+
+
+def parse_args() -> None:
+    """
+    Parse command line arguments.
+    """
+    parser = argparse.ArgumentParser(
+        prog="mocrc",
+        usage="%(prog)s [options]",
+        description="Simple manga_ocr wrapper for termux.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+
+    parser.add_argument(
+        "-r",
+        "--read_from",
+        type=str,
+        default=CLIPBOARD_VALUE,
+        help=f"Specify file or directory to read from. Magic values are '{CLIPBOARD_VALUE}' and '{SCREENSHOTS_VALUE}'.",
+    )
+
+    parser.add_argument(
+        "-w",
+        "--write_to",
+        type=str,
+        default=CLIPBOARD_VALUE,
+        help="Specify file or directory to write to. Magic value is 'clipboard'. "
+        + "If a file is provided, the result will be appended to the file. "
+        + "If a directory is provided, the result will be saved to {directory}/{imagename}.txt",
+    )
+
+    parser.add_argument(
+        "-d",
+        "--delay",
+        type=int,
+        default=1,
+        help="Delay in seconds between checks.",
+    )
+
+    parser.add_argument(
+        "-hd",
+        "--hidden",
+        type=bool,
+        default=False,
+        help="Include hidden files",
+    )
+
+    parser.add_argument(
+        "-m",
+        "--move",
+        type=bool,
+        default=True,
+        help="Move the scanned image to a subdirectory.",
+    )
+
+    parser.add_argument(
+        "-sd",
+        "--subdirectory",
+        type=str,
+        default="scanned",
+        help="Subdirectory to move the scanned image to.",
+    )
+
+    parser.add_argument(
+        "-n",
+        "--notification",
+        type=bool,
+        default=True,
+        help="Send a notification after processing an image.",
+    )
+
+    global args
+    args = parser.parse_args()
+
+
+def monitor_directory(dirs: list) -> None:
+    """
+    Monitor the given directories for new images.
+    """
+    old_paths = set()
+    for path in dirs:
+        if not path.exists():
+            continue
+        for subpath in path.iterdir():
+            old_paths.add(get_path_key(subpath))
+
+    print("Monitoring...")
+    while True:
+        time.sleep(args.delay)
+
+        for path in dirs:
+            if not path.exists():
+                continue
+            for subpath in path.iterdir():
+                path_key = get_path_key(subpath)
+                if path_key not in old_paths and subpath.is_file():
+                    old_paths.add(path_key)
+                    if subpath.suffix in IMAGE_EXTENSIONS and (
+                        args.hidden or not subpath.name.startswith(".")
+                    ):
+                        process_image(subpath)
+
+
+def monitor_clipboard() -> None:
+    """
+    Monitor the clipboard for new text.
+    """
+    old_clipboard_binary = get_clipboard_binary()
+    print("Monitoring...")
+    while True:
+        time.sleep(args.delay)
+
+        new_clipboard_binary = get_clipboard_binary()
+
+        if new_clipboard_binary.getvalue() == old_clipboard_binary.getvalue():
+            continue
+
+        try:
+            # parse binary clipboard data as PIL image
+            img = Image.open(new_clipboard_binary)
+            process_image(img)
+        except:
+            try:
+                # parse binary clipboard data as text
+                text = new_clipboard_binary.getvalue().decode("utf-8")
+                process_image(text)
+            except:
+                pass
+
+        old_clipboard_binary = get_clipboard_binary()
 
 
 def main():
     """
     Main function.
     """
+    parse_args()
+    signal.signal(signal.SIGINT, signal_handler)
+    check_dependencies(args.read_from, args.write_to)
 
-    check_dependencies()
+    if HIDE_MANGA_OCR_INITIALIZATION:
+        print("Initializing manga_ocr...")
+        # disable sysout and syserr
+        original_stdout = sys.stdout
+        original_stderr = sys.stderr
+        sys.stdout = open(os.devnull, "w")
+        sys.stderr = open(os.devnull, "w")
 
-    # See https://github.com/kha-white/manga-ocr/blob/master/manga_ocr/run.py
-    old_paths = set()
-    for path in SCREENSHOT_PATHS:
-        if not path.exists():
-            continue
-        for subpath in path.iterdir():
-            old_paths.add(get_path_key(subpath))
+    from manga_ocr import MangaOcr
 
-    print("Monitoring screenshots...")
-    while True:
-        try:
-            for path in SCREENSHOT_PATHS:
-                if not path.exists():
-                    continue
-                for subpath in path.iterdir():
-                    path_key = get_path_key(subpath)
-                    if path_key not in old_paths and not subpath.name.startswith("."):
-                        old_paths.add(path_key)
-                        if subpath.suffix in [
-                            ".png",
-                            ".jpg",
-                            ".jpeg",
-                            ".webp",
-                            ".bmp",
-                            ".gif",
-                        ]:
-                            process_image(subpath)
+    global mocr
+    mocr = MangaOcr()
 
-            time.sleep(DELAY_SECS)
-        except KeyboardInterrupt:
-            print("\nExiting...")
-            break
+    if HIDE_MANGA_OCR_INITIALIZATION:
+        # enable sysout and syserr
+        sys.stdout = original_stdout
+        sys.stderr = original_stderr
+        print("Initialized manga_ocr.")
+
+    if args.read_from == SCREENSHOTS_VALUE:
+        monitor_directory(SCREENSHOT_PATHS)
+    elif args.read_from == CLIPBOARD_VALUE:
+        monitor_clipboard()
+    else:
+        monitor_directory([Path(args.read_from).expanduser()])
 
 
 if __name__ == "__main__":
