@@ -1,12 +1,9 @@
 #!/usr/bin/env python3
 
 """
-This scripts monitors the screenshot directory. If a new image appears,
-it will be processed by the OCR, the result will be saved to the
-clipboard and the image will be moved to the `scanned` directory
-inside the screenshot directory.
-
 See https://github.com/kha-white/manga-ocr/blob/master/manga_ocr/run.py
+
+TODO: Images from clipboard on termux no working
 """
 
 import os
@@ -311,6 +308,14 @@ def parse_args() -> None:
         help="Send a notification after processing an image.",
     )
 
+    parser.add_argument(
+        "-mm",
+        "--manual_mode",
+        action="store_true",
+        help="Normally the script will continuously monitor the clipboard or a directory. "
+        + "This flag will make the script run once, when `enter` is pressed.",
+    )
+
     global args
     args = parser.parse_args()
 
@@ -328,7 +333,10 @@ def monitor_directory(dirs: list) -> None:
 
     print("Monitoring...")
     while True:
-        time.sleep(args.delay)
+        if args.manual_mode:
+            input("Press enter to run...")
+        else:
+            time.sleep(args.delay)
 
         for path in dirs:
             if not path.exists():
@@ -350,7 +358,10 @@ def monitor_clipboard() -> None:
     old_clipboard_binary = get_clipboard_binary()
     print("Monitoring...")
     while True:
-        time.sleep(args.delay)
+        if args.manual_mode:
+            input("Press enter to run...")
+        else:
+            time.sleep(args.delay)
 
         new_clipboard_binary = get_clipboard_binary()
 
