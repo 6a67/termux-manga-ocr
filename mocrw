@@ -244,7 +244,7 @@ def parse_args() -> None:
     Parse command line arguments.
     """
     parser = argparse.ArgumentParser(
-        prog="mocrc",
+        prog="mocrw",
         usage="%(prog)s [options]",
         description="Simple manga_ocr wrapper for termux.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
