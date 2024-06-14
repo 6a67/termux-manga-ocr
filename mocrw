@@ -175,7 +175,7 @@ def check_dependencies(read_from: str, write_to: str) -> None:
     if read_from == CLIPBOARD_VALUE or write_to == CLIPBOARD_VALUE:
         check_clipboard()
 
-    if read_from != CLIPBOARD_VALUE and not Path(read_from).exists():
+    if read_from != CLIPBOARD_VALUE and read_from != SCREENSHOTS_VALUE and not Path(read_from).expanduser().exists():
         print(f"\033[91m{read_from} does not exist.\033[0m")
         sys.exit(1)
 
