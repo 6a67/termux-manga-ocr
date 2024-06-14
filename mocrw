@@ -5,7 +5,11 @@ This script can be accessed via: https://tmx.6a67.de/mocrw
 
 See https://github.com/kha-white/manga-ocr/blob/master/manga_ocr/run.py
 
-TODO: Images from clipboard on termux no working
+TODO:   Images from clipboard on termux not working
+        As far as I can tell, `termux-clipboard-get` UTF-8
+        encodes the output, which discards part of the binary
+        data of the image.
+        I don't really know how to fix this
 """
 
 import os
