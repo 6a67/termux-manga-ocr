@@ -1,5 +1,6 @@
 ################################################################################
 ## This script installs manga_ocr on termux
+## It can be accessed via: https://tmx.6a67.de/mocri
 ##
 ## manga_ocr works on ARM64 devices, but has some dependencies have to be
 ## installed manually for built from source.

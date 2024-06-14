@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
 """
+This script can be accessed via: https://tmx.6a67.de/mocrw
+
 See https://github.com/kha-white/manga-ocr/blob/master/manga_ocr/run.py
 
 TODO: Images from clipboard on termux no working
