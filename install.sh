@@ -2,16 +2,16 @@
 ## This script installs manga_ocr on termux
 ## It can be accessed via: https://tmx.6a67.de/mocri
 ##
-## manga_ocr works on ARM64 devices, but has some dependencies have to be
-## installed manually for built from source.
-## This script installs builds and installs `mecab` and `safetensors_rust` from 
-## source, `numpy` and `tokenizers` from the tur-repo, `pytorch`` from the x-11 repo
-## and installs `meacab-python3` and `maturin` from binary wheels provided for
+## manga_ocr works on ARM64 devices, but has some dependencies that have to be
+## installed manually or built from source.
+## This script builds and installs `mecab` and `safetensors_rust` from source,
+## `numpy` and `tokenizers` from the tur-repo, `pytorch` from the x-11 repo
+## and `meacab-python3` and `maturin` from binary wheels provided for
 ## manylinux2014_aarch64.
 ##
 ## IMPORTANT: Before running the script, run `termux-chage-repo` at least once
-## and make sure to make at least ~4.5GB of space available on the device.
-## The scripts builds multiple dependencies from source and therefore might
+## and make sure to have at least ~4.5GB of space available on the device.
+## The script builds multiple dependencies from source and therefore might
 ## take a while to complete (on my device it took a bit over 10min).
 ################################################################################
 
