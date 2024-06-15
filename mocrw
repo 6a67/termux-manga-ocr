@@ -158,6 +158,7 @@ def send_notification(content: str) -> None:
             f' --button1-action "{BUTTON1_BASH_COMMAND}"'
             f' --button2 "{BUTTON2_TEXT}"'
             f' --button2-action "{BUTTON2_BASH_COMMAND}"'
+            f' --on-delete "{BUTTON2_BASH_COMMAND}"'
         )
         os.system(f"termux-notification-remove {NOTIFICATION_ID}_{old_notification_id}")
         return
