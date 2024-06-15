@@ -69,10 +69,11 @@ class Modes(Enum):
     CONTINUOUS = "continuous"
     MANUAL = "manual"
     NOTIFICATION = "notification"
-    
+
+
 class ModesEnumAction(argparse.Action):
     def __init__(self, option_strings, dest, **kwargs):
-        kwargs['choices'] = [e.name for e in Modes]
+        kwargs["choices"] = [e.name for e in Modes]
         super().__init__(option_strings, dest, **kwargs)
 
     def __call__(self, parser, namespace, values, option_string=None):
@@ -86,6 +87,7 @@ def exit_program(code: int = 0) -> None:
     shutil.rmtree(TMP_DIR)
     print("\nExiting...")
     sys.exit(code)
+
 
 def check_storage() -> None:
     """
@@ -102,12 +104,8 @@ def check_clipboard() -> None:
     """
     if ON_TERMUX:
         if os.system("timeout 5 termux-clipboard-get > /dev/null") != 0:
-            print(
-                "\033[91mPlease install the `termux-api` package and the corresponding app.\033[0m"
-            )
-            print(
-                "\033[91mRun `pkg install termux-api` and install https://f-droid.org/packages/com.termux.api/ on your device.\033[0m"
-            )
+            print("\033[91mPlease install the `termux-api` package and the corresponding app.\033[0m")
+            print("\033[91mRun `pkg install termux-api` and install https://f-droid.org/packages/com.termux.api/ on your device.\033[0m")
             exit_program(1)
         return
 
@@ -141,18 +139,25 @@ def send_notification(content: str) -> None:
     """
     if ON_TERMUX:
         if args.mode != Modes.NOTIFICATION.value:
-            os.system(
-                f'termux-notification --id "{NOTIFICATION_ID}" --title "{NOTIFICATION_TITLE}" --content "{content}"'
-            )
+            os.system(f'termux-notification --id "{NOTIFICATION_ID}" --title "{NOTIFICATION_TITLE}" --content "{content}"')
             time.sleep(2)
             os.system(f'termux-notification-remove "{NOTIFICATION_ID}"')
             return
-        
+
         global notification_id
         old_notification_id = notification_id
         notification_id = (notification_id + 1) % 2
         os.system(
-            f'termux-notification --id "{NOTIFICATION_ID}_{notification_id}" --title "{NOTIFICATION_TITLE}" --content "{content}" --group "{NOTIFICATION_ID}" --ongoing --priority high --button1 "{BUTTON1_TEXT}" --button1-action "{BUTTON1_BASH_COMMAND}" --button2 "{BUTTON2_TEXT}" --button2-action "{BUTTON2_BASH_COMMAND}"'
+            f'termux-notification --id "{NOTIFICATION_ID}_{notification_id}"'
+            f' --title "{NOTIFICATION_TITLE}"'
+            f' --content "{content}"'
+            f' --group "{NOTIFICATION_ID}"'
+            f' --ongoing'
+            f' --priority high'
+            f' --button1 "{BUTTON1_TEXT}"'
+            f' --button1-action "{BUTTON1_BASH_COMMAND}"'
+            f' --button2 "{BUTTON2_TEXT}"'
+            f' --button2-action "{BUTTON2_BASH_COMMAND}"'
         )
         os.system(f"termux-notification-remove {NOTIFICATION_ID}_{old_notification_id}")
         return
@@ -182,7 +187,7 @@ def output_text(text: str, image: Path | Image.Image) -> None:
             os.system(f'echo "{text}" | termux-clipboard-set')
         else:
             os.system(f'echo "{text}" | xclip -selection clipboard')
-        
+
         return
 
     if isinstance(image, Image.Image):
@@ -228,16 +233,12 @@ def check_dependencies(read_from: str, write_to: str) -> None:
         if not ON_TERMUX:
             print("\033[91mThis option is intended to be run on termux.\033[0m")
             exit_program(1)
-        
+
         TMP_DIR.mkdir(parents=True, exist_ok=True)
 
         create_fifo_pipe()
 
-    if (
-        read_from == SCREENSHOTS_VALUE
-        or Path(read_from).is_relative_to(STORAGE_PATH)
-        or Path(write_to).is_relative_to(STORAGE_PATH)
-    ):
+    if read_from == SCREENSHOTS_VALUE or Path(read_from).is_relative_to(STORAGE_PATH) or Path(write_to).is_relative_to(STORAGE_PATH):
         if not ON_TERMUX:
             print("\033[91mThis option is intended to be run on termux.\033[0m")
             exit_program(1)
@@ -253,9 +254,7 @@ def check_dependencies(read_from: str, write_to: str) -> None:
 
     if write_to != CLIPBOARD_VALUE and not Path(write_to).expanduser().exists():
         Path(write_to).expanduser().mkdir(parents=True, exist_ok=True)
-        print(
-            f"\033[33m{write_to} did not exist. Created directory.\033[0m"
-        )
+        print(f"\033[33m{write_to} did not exist. Created directory.\033[0m")
 
 
 def get_path_key(path: Path) -> str:
@@ -271,11 +270,7 @@ def get_clipboard_binary() -> io.BytesIO:
     Works for xclip and termux-clipboard-get.
     """
     if ON_TERMUX:
-        return io.BytesIO(
-            subprocess.run(
-                ["termux-clipboard-get"], stdout=subprocess.PIPE, stderr=subprocess.PIPE
-            ).stdout
-        )
+        return io.BytesIO(subprocess.run(["termux-clipboard-get"], stdout=subprocess.PIPE, stderr=subprocess.PIPE).stdout)
     else:
         for type in IMAGE_EXTENSIONS:
             try:
@@ -302,7 +297,7 @@ def get_clipboard_binary() -> io.BytesIO:
 
             except:
                 pass
-        
+
         try:
             return io.BytesIO(
                 subprocess.run(
@@ -424,11 +419,10 @@ def monitor_directory(dirs: list) -> None:
             print("Waiting for notification input...")
             time.sleep(args.delay)
             with open(FIFO_PIPE_PATH, "r") as fifo:
-                select.select([fifo], [], []) # wait for input
+                select.select([fifo], [], [])  # wait for input
                 if fifo.read().strip() == BUTTON2_TEXT:
                     os.system(f"termux-notification-remove {NOTIFICATION_ID}_{notification_id}")
                     exit_program(0)
-
 
         new_paths = set()
         for path in dirs:
@@ -438,11 +432,9 @@ def monitor_directory(dirs: list) -> None:
                 path_key = get_path_key(subpath)
                 if path_key not in old_paths and subpath.is_file():
                     old_paths.add(path_key)
-                    if subpath.suffix in IMAGE_EXTENSIONS and (
-                        args.hidden or not subpath.name.startswith(".")
-                    ):
+                    if subpath.suffix in IMAGE_EXTENSIONS and (args.hidden or not subpath.name.startswith(".")):
                         new_paths.add(subpath)
-        
+
         # if notification or manual mode, process only the latest image
         if args.mode == Modes.NOTIFICATION.value or args.mode == Modes.MANUAL.value:
             new_paths = sorted(new_paths, key=lambda x: x.lstat().st_mtime, reverse=True)[:1]
@@ -469,11 +461,10 @@ def monitor_clipboard() -> None:
             print("Waiting for notification input...")
             time.sleep(args.delay)
             with open(FIFO_PIPE_PATH, "r") as fifo:
-                select.select([fifo], [], []) # wait for input
+                select.select([fifo], [], [])  # wait for input
                 if fifo.read().strip() == BUTTON2_TEXT:
                     os.system(f"termux-notification-remove {NOTIFICATION_ID}_{notification_id}")
                     exit_program(0)
-
 
         new_clipboard_binary = get_clipboard_binary()
 
