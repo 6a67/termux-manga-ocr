@@ -3,6 +3,8 @@
 """
 This script can be accessed via: https://tmx.6a67.de/mocrw
 
+Personally, I run this script as `./mocrw -r screenshots"
+
 Inspired by:
     https://github.com/kha-white/manga-ocr/blob/master/manga_ocr/run.py
     https://github.com/Ajatt-Tools/transformers_ocr/blob/main/src/transformers_ocr.py
