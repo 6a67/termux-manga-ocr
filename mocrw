@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 
 """
-This script can be accessed via: https://tmx.6a67.de/mocrw
+This script is a wrapper for the manga_ocr library that can be run on termux.
+Run `./mocrw -h` for help.
+It can be accessed via: https://tmx.6a67.de/mocrw
 
 Personally, I run this script as `./mocrw -r screenshots"
 
