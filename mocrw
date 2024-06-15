@@ -62,8 +62,6 @@ mocr = None
 
 args: argparse.Namespace = None
 
-notification_id = 0 % 2
-
 
 class Modes(Enum):
     CONTINUOUS = "continuous"
@@ -84,6 +82,9 @@ def exit_program(code: int = 0) -> None:
     """
     Exit the program.
     """
+    if ON_TERMUX:
+        os.system(f"termux-notification-remove {NOTIFICATION_ID}")
+    time.sleep(1)
     shutil.rmtree(TMP_DIR)
     print("\nExiting...")
     sys.exit(code)
@@ -139,29 +140,26 @@ def send_notification(content: str) -> None:
     """
     if ON_TERMUX:
         if args.mode != Modes.NOTIFICATION.value:
-            os.system(f'termux-notification --id "{NOTIFICATION_ID}" --title "{NOTIFICATION_TITLE}" --content "{content}" --alert-once')
-            time.sleep(2)
-            os.system(f'termux-notification-remove "{NOTIFICATION_ID}"')
+            os.system(
+                f'termux-notification --id "{NOTIFICATION_ID}" --title "{NOTIFICATION_TITLE}" --content "{content}" --alert-once --icon book'
+            )
             return
 
-        global notification_id
-        old_notification_id = notification_id
-        notification_id = (notification_id + 1) % 2
         os.system(
-            f'termux-notification --id "{NOTIFICATION_ID}_{notification_id}"'
+            f'termux-notification --id "{NOTIFICATION_ID}"'
             f' --title "{NOTIFICATION_TITLE}"'
             f' --content "{content}"'
             f' --group "{NOTIFICATION_ID}"'
-            f' --ongoing'
-            f' --priority high'
-            f' --alert-once'
+            f" --ongoing"
+            f" --priority high"
+            f" --alert-once"
+            f" --icon book"
             f' --button1 "{BUTTON1_TEXT}"'
             f' --button1-action "{BUTTON1_BASH_COMMAND}"'
             f' --button2 "{BUTTON2_TEXT}"'
             f' --button2-action "{BUTTON2_BASH_COMMAND}"'
             f' --on-delete "{BUTTON2_BASH_COMMAND}"'
         )
-        os.system(f"termux-notification-remove {NOTIFICATION_ID}_{old_notification_id}")
         return
 
     try:
@@ -212,13 +210,18 @@ def process_image(image: Path | Image.Image) -> None:
     Process the image with the OCR, save the result to the clipboard
     and move the image to the subdirectory.
     """
+
+    # Processing notification only on termux, assuming that on other systems the script runs faster
+    if (args.mode == Modes.NOTIFICATION.value or args.notification) and ON_TERMUX:
+        send_notification("Processing image...")
+
     text = mocr(image).strip()
     if text:
         print(f"Text: {text}")
         output_text(text, image)
 
         if args.notification:
-            send_notification(f"Copied: {text}")
+            send_notification(f"Scanned: {text}")
 
     if args.move and isinstance(image, Path):
         try:
@@ -231,6 +234,9 @@ def check_dependencies(read_from: str, write_to: str) -> None:
     """
     Check if all dependencies are installed.
     """
+    if ON_TERMUX:
+        os.system(f"termux-notification-remove {NOTIFICATION_ID}")
+
     if args.mode == Modes.NOTIFICATION.value:
         if not ON_TERMUX:
             print("\033[91mThis option is intended to be run on termux.\033[0m")
@@ -423,7 +429,6 @@ def monitor_directory(dirs: list) -> None:
             with open(FIFO_PIPE_PATH, "r") as fifo:
                 select.select([fifo], [], [])  # wait for input
                 if fifo.read().strip() == BUTTON2_TEXT:
-                    os.system(f"termux-notification-remove {NOTIFICATION_ID}_{notification_id}")
                     exit_program(0)
 
         new_paths = set()
@@ -465,7 +470,6 @@ def monitor_clipboard() -> None:
             with open(FIFO_PIPE_PATH, "r") as fifo:
                 select.select([fifo], [], [])  # wait for input
                 if fifo.read().strip() == BUTTON2_TEXT:
-                    os.system(f"termux-notification-remove {NOTIFICATION_ID}_{notification_id}")
                     exit_program(0)
 
         new_clipboard_binary = get_clipboard_binary()
