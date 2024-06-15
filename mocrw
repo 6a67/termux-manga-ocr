@@ -3,7 +3,9 @@
 """
 This script can be accessed via: https://tmx.6a67.de/mocrw
 
-See https://github.com/kha-white/manga-ocr/blob/master/manga_ocr/run.py
+Inspired by:
+    https://github.com/kha-white/manga-ocr/blob/master/manga_ocr/run.py
+    https://github.com/Ajatt-Tools/transformers_ocr/blob/main/src/transformers_ocr.py
 
 TODO:   Images from clipboard on termux not working
         As far as I can tell, `termux-clipboard-get` UTF-8
@@ -21,6 +23,9 @@ import argparse
 from PIL import Image
 import io
 import subprocess
+from enum import Enum
+import shutil
+import select
 
 STORAGE_PATH = Path("~/storage/").expanduser()
 SCREENSHOT_PATHS = [
@@ -39,12 +44,48 @@ SCREENSHOTS_VALUE = "screenshots"
 
 HIDE_MANGA_OCR_INITIALIZATION = True
 
+ON_TERMUX: bool = os.environ.get("TERMUX_VERSION", "") != ""
+
+PROGRAM_NAME = "mocrw"
+
+TMP_DIR = Path(subprocess.run(["mktemp", "-d"], stdout=subprocess.PIPE).stdout.decode().strip()).parent.joinpath(PROGRAM_NAME)
+
+FIFO_PIPE_PATH = TMP_DIR.joinpath(f"{PROGRAM_NAME}.fifo")
+
+BUTTON1_TEXT = "Process"
+BUTTON2_TEXT = "Exit"
+
+BUTTON1_BASH_COMMAND = f"echo '{BUTTON1_TEXT}' > '{FIFO_PIPE_PATH}'"
+BUTTON2_BASH_COMMAND = f"echo '{BUTTON2_TEXT}' > '{FIFO_PIPE_PATH}'"
+
 mocr = None
 
 args: argparse.Namespace = None
 
-ON_TERMUX: bool = os.environ.get("TERMUX_VERSION", "") != ""
+notification_id = 0 % 2
 
+
+class Modes(Enum):
+    CONTINUOUS = "continuous"
+    MANUAL = "manual"
+    NOTIFICATION = "notification"
+    
+class ModesEnumAction(argparse.Action):
+    def __init__(self, option_strings, dest, **kwargs):
+        kwargs['choices'] = [e.name for e in Modes]
+        super().__init__(option_strings, dest, **kwargs)
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        setattr(namespace, self.dest, Modes[values])
+
+
+def exit_program(code: int = 0) -> None:
+    """
+    Exit the program.
+    """
+    shutil.rmtree(TMP_DIR)
+    print("\nExiting...")
+    sys.exit(code)
 
 def check_storage() -> None:
     """
@@ -52,7 +93,7 @@ def check_storage() -> None:
     """
     if not os.path.exists(STORAGE_PATH):
         print("\033[91mPlease run `termux-setup-storage` first.\033[0m")
-        sys.exit(1)
+        exit_program(1)
 
 
 def check_clipboard() -> None:
@@ -67,19 +108,31 @@ def check_clipboard() -> None:
             print(
                 "\033[91mRun `pkg install termux-api` and install https://f-droid.org/packages/com.termux.api/ on your device.\033[0m"
             )
-            sys.exit(1)
+            exit_program(1)
         return
 
     if os.system("timeout 5 xclip -selection clipboard -o > /dev/null") == 0:
         return
 
     print("\033[91mPlease install the `xclip` package.\033[0m")
-    sys.exit(1)
+    exit_program(1)
+
+
+def create_fifo_pipe() -> None:
+    """
+    Create a fifo pipe for communication between the notification and the script.
+    """
+    try:
+        if os.path.isfile(FIFO_PIPE_PATH):
+            os.remove(FIFO_PIPE_PATH)
+        os.mkfifo(FIFO_PIPE_PATH)
+    except Exception as e:
+        print(f"Error creating fifo pipe: {e}")
+        exit_program(1)
 
 
 def signal_handler(sig, frame):
-    print("\nExiting...")
-    sys.exit(0)
+    exit_program(0)
 
 
 def send_notification(content: str) -> None:
@@ -87,11 +140,21 @@ def send_notification(content: str) -> None:
     Send a notification using termux-notification and then clear it.
     """
     if ON_TERMUX:
+        if args.mode != Modes.NOTIFICATION.value:
+            os.system(
+                f'termux-notification --id "{NOTIFICATION_ID}" --title "{NOTIFICATION_TITLE}" --content "{content}"'
+            )
+            time.sleep(2)
+            os.system(f'termux-notification-remove "{NOTIFICATION_ID}"')
+            return
+        
+        global notification_id
+        old_notification_id = notification_id
+        notification_id = (notification_id + 1) % 2
         os.system(
-            f'termux-notification --id "{NOTIFICATION_ID}" --title "{NOTIFICATION_TITLE}" --content "{content}"'
+            f'termux-notification --id "{NOTIFICATION_ID}_{notification_id}" --title "{NOTIFICATION_TITLE}" --content "{content}" --group "{NOTIFICATION_ID}" --button1 "{BUTTON1_TEXT}" --button1-action "{BUTTON1_BASH_COMMAND}" --button2 "{BUTTON2_TEXT}" --button2-action "{BUTTON2_BASH_COMMAND}"'
         )
-        time.sleep(2)
-        os.system(f'termux-notification-remove "{NOTIFICATION_ID}"')
+        os.system(f"termux-notification-remove {NOTIFICATION_ID}_{old_notification_id}")
         return
 
     try:
@@ -161,6 +224,15 @@ def check_dependencies(read_from: str, write_to: str) -> None:
     """
     Check if all dependencies are installed.
     """
+    if args.mode == Modes.NOTIFICATION.value:
+        if not ON_TERMUX:
+            print("\033[91mThis option is intended to be run on termux.\033[0m")
+            exit_program(1)
+        
+        TMP_DIR.mkdir(parents=True, exist_ok=True)
+
+        create_fifo_pipe()
+
     if (
         read_from == SCREENSHOTS_VALUE
         or Path(read_from).is_relative_to(STORAGE_PATH)
@@ -168,7 +240,7 @@ def check_dependencies(read_from: str, write_to: str) -> None:
     ):
         if not ON_TERMUX:
             print("\033[91mThis option is intended to be run on termux.\033[0m")
-            sys.exit(1)
+            exit_program(1)
 
         check_storage()
 
@@ -177,7 +249,7 @@ def check_dependencies(read_from: str, write_to: str) -> None:
 
     if read_from != CLIPBOARD_VALUE and read_from != SCREENSHOTS_VALUE and not Path(read_from).expanduser().exists():
         print(f"\033[91m{read_from} does not exist.\033[0m")
-        sys.exit(1)
+        exit_program(1)
 
     if write_to != CLIPBOARD_VALUE and not Path(write_to).expanduser().exists():
         Path(write_to).expanduser().mkdir(parents=True, exist_ok=True)
@@ -250,7 +322,7 @@ def parse_args() -> None:
     Parse command line arguments.
     """
     parser = argparse.ArgumentParser(
-        prog="mocrw",
+        prog=PROGRAM_NAME,
         usage="%(prog)s [options]",
         description="Simple manga_ocr wrapper for termux.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -291,7 +363,7 @@ def parse_args() -> None:
     )
 
     parser.add_argument(
-        "-m",
+        "-mv",
         "--move",
         type=bool,
         default=True,
@@ -315,11 +387,15 @@ def parse_args() -> None:
     )
 
     parser.add_argument(
-        "-mm",
-        "--manual_mode",
-        action="store_true",
-        help="Normally the script will continuously monitor the clipboard or a directory. "
-        + "This flag will make the script run once, when `enter` is pressed.",
+        "-m",
+        "--mode",
+        type=str,
+        default=Modes.NOTIFICATION.value,
+        choices=[mode.value for mode in Modes],
+        help="This script has three modes:\n\n"
+        + f"{Modes.CONTINUOUS.value}: Continuously monitor the clipboard or directory.\n"
+        + f"{Modes.MANUAL.value}: Wait for user input to process the clipboard or directory.\n"
+        + f"{Modes.NOTIFICATION.value}: Press the button in the notification to process the clipboard or directory.",
     )
 
     global args
@@ -339,11 +415,22 @@ def monitor_directory(dirs: list) -> None:
 
     print("Monitoring...")
     while True:
-        if args.manual_mode:
+        if args.mode == Modes.MANUAL.value:
             input("Press enter to run...")
-        else:
+        elif args.mode == Modes.CONTINUOUS.value:
+            print("Monitoring...")
             time.sleep(args.delay)
+        elif args.mode == Modes.NOTIFICATION.value:
+            print("Waiting for notification input...")
+            time.sleep(args.delay)
+            with open(FIFO_PIPE_PATH, "r") as fifo:
+                select.select([fifo], [], []) # wait for input
+                if fifo.read().strip() == BUTTON2_TEXT:
+                    os.system(f"termux-notification-remove {NOTIFICATION_ID}_{notification_id}")
+                    exit_program(0)
 
+
+        new_paths = set()
         for path in dirs:
             if not path.exists():
                 continue
@@ -354,7 +441,17 @@ def monitor_directory(dirs: list) -> None:
                     if subpath.suffix in IMAGE_EXTENSIONS and (
                         args.hidden or not subpath.name.startswith(".")
                     ):
-                        process_image(subpath)
+                        new_paths.add(subpath)
+        
+        # if notification or manual mode, process only the latest image
+        if args.mode == Modes.NOTIFICATION.value or args.mode == Modes.MANUAL.value:
+            new_paths = sorted(new_paths, key=lambda x: x.lstat().st_mtime, reverse=True)[:1]
+
+        for path in new_paths:
+            try:
+                process_image(path)
+            except Exception as e:
+                print(f"Error processing image: {e}")
 
 
 def monitor_clipboard() -> None:
@@ -362,12 +459,21 @@ def monitor_clipboard() -> None:
     Monitor the clipboard for new text.
     """
     old_clipboard_binary = get_clipboard_binary()
-    print("Monitoring...")
     while True:
-        if args.manual_mode:
+        if args.mode == Modes.MANUAL.value:
             input("Press enter to run...")
-        else:
+        elif args.mode == Modes.CONTINUOUS.value:
+            print("Monitoring...")
             time.sleep(args.delay)
+        elif args.mode == Modes.NOTIFICATION.value:
+            print("Waiting for notification input...")
+            time.sleep(args.delay)
+            with open(FIFO_PIPE_PATH, "r") as fifo:
+                select.select([fifo], [], []) # wait for input
+                if fifo.read().strip() == BUTTON2_TEXT:
+                    os.system(f"termux-notification-remove {NOTIFICATION_ID}_{notification_id}")
+                    exit_program(0)
+
 
         new_clipboard_binary = get_clipboard_binary()
 
@@ -416,6 +522,9 @@ def main():
         sys.stderr = original_stderr
         print("Initialized manga_ocr.")
 
+    if args.mode == Modes.NOTIFICATION.value:
+        send_notification("Ready to process images.")
+
     if args.read_from == SCREENSHOTS_VALUE:
         monitor_directory(SCREENSHOT_PATHS)
     elif args.read_from == CLIPBOARD_VALUE:
@@ -425,4 +534,4 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    exit_program(main())
