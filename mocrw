@@ -139,7 +139,7 @@ def send_notification(content: str) -> None:
     """
     if ON_TERMUX:
         if args.mode != Modes.NOTIFICATION.value:
-            os.system(f'termux-notification --id "{NOTIFICATION_ID}" --title "{NOTIFICATION_TITLE}" --content "{content}"')
+            os.system(f'termux-notification --id "{NOTIFICATION_ID}" --title "{NOTIFICATION_TITLE}" --content "{content}" --alert-once')
             time.sleep(2)
             os.system(f'termux-notification-remove "{NOTIFICATION_ID}"')
             return
@@ -154,6 +154,7 @@ def send_notification(content: str) -> None:
             f' --group "{NOTIFICATION_ID}"'
             f' --ongoing'
             f' --priority high'
+            f' --alert-once'
             f' --button1 "{BUTTON1_TEXT}"'
             f' --button1-action "{BUTTON1_BASH_COMMAND}"'
             f' --button2 "{BUTTON2_TEXT}"'
