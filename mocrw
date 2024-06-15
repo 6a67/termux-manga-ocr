@@ -152,7 +152,7 @@ def send_notification(content: str) -> None:
         old_notification_id = notification_id
         notification_id = (notification_id + 1) % 2
         os.system(
-            f'termux-notification --id "{NOTIFICATION_ID}_{notification_id}" --title "{NOTIFICATION_TITLE}" --content "{content}" --group "{NOTIFICATION_ID}" --button1 "{BUTTON1_TEXT}" --button1-action "{BUTTON1_BASH_COMMAND}" --button2 "{BUTTON2_TEXT}" --button2-action "{BUTTON2_BASH_COMMAND}"'
+            f'termux-notification --id "{NOTIFICATION_ID}_{notification_id}" --title "{NOTIFICATION_TITLE}" --content "{content}" --group "{NOTIFICATION_ID}" --ongoing --priority high --button1 "{BUTTON1_TEXT}" --button1-action "{BUTTON1_BASH_COMMAND}" --button2 "{BUTTON2_TEXT}" --button2-action "{BUTTON2_BASH_COMMAND}"'
         )
         os.system(f"termux-notification-remove {NOTIFICATION_ID}_{old_notification_id}")
         return
