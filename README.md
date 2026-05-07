@@ -1,6 +1,6 @@
-## Installation Script 📥
+## Installation Script
 
-### Prerequisites 📋
+### Prerequisites
 
 - A device with ARM64 architecture
 - Termux installed
@@ -15,9 +15,9 @@ curl -sL tmx.6a67.de/mocri | bash
 (This downloads and executes a script directly from the internet. Please review the script before running it.)
 
 
-## Wrapper Script 📜
+## Wrapper Script
 
-### Prerequisites 📋
+### Prerequisites
 
 - Termux:API
   - Run `pkg install termux-api` to install it
@@ -29,7 +29,7 @@ curl -sL tmx.6a67.de/mocri | bash
 curl -sL tmx.6a67.de/mocrw | bash
 ```
 
-### Wrapper Usage 🚀
+### Wrapper Usage
 
 1. **Make the script executable:**
     ```sh
@@ -52,7 +52,7 @@ curl -sL tmx.6a67.de/mocrw | bash
 - `-n, --notification`: Send a notification after processing an image.
 - `-m, --mode`: Script modes: 'continuous', 'manual', 'notification'.
 
-## Sources 📚
+## Sources
 
 - https://wiki.termux.com/wiki/Termux:API
 - https://github.com/kha-white/manga-ocr
